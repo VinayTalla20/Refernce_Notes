@@ -1,0 +1,62 @@
+Creating Logical Volumes with EBS volume attached to EC2 instances
+
+connect to EC2 instance
+Switch to Sudo User
+
+$ fdisk -l
+
+Copy or Note the Disk Name which as configured with EBS
+
+Eg: /dev/nvme1n1
+
+
+yum install lvm2*
+
+
+Ensure devices is not under LVM Control
+
+$ pvdisplay /dev/nvme1n1     (this command is to display info about the disk, /dev/nvme1n1 should be created before you pvdisplay)
+
+$ pvcreate /dev/nvme1n1
+
+Physical Volume is Successfullyy created
+
+
+$ vgcreate DATAVG  /dev/nvme1n1
+
+Volume Group "DATAVG" succefully created
+
+$ vgdisplay DATAVG
+
+
+Create logical Volumes as needed
+
+$ lvcreate -L 10G -n lvdata1 DATAVG
+
+Logical Volume is "lvdata1" is created
+
+Create fielsystem on new Logical Volume
+
+$ mkfs.ext4 /dev/DATAVG/lvdata1
+
+Tune Boot time file system parametes for volume
+
+$ tune2fs -c o /dev/DATAVG/lvdata1
+$ tune2fs -i o /dev/DATAVG/1vdata1
+
+Appeding the fs entry into /etc/fstab
+
+get UUID by blkid command
+
+UUID=value   /mountpoint  ext4  nofail 1 2
+
+
+$ mkdir /mountpoint
+
+$ mount /mountpoint
+
+$ shutdown -r
+
+
+Refenrcence Links:   https://aws.amazon.com/blogs/database/using-amazon-ebs-elastic-volumes-with-oracle-databases-part-2-databases-using-lvm/
+https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-using-volumes.html

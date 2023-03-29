@@ -24,3 +24,13 @@ KubePodInventory
 | project ContainerID
 
 
+Query to get logs based on ContainerID:
+
+ContainerLog
+| where ContainerID contains "$containerid"
+| where TimeGenerated > ago($time_span)
+| project ContainerID, TimeGenerated, LogEntry, LogEntrySource
+
+
+Above $containerid, $time_span are Grafana Dashboard Varibales
+

@@ -1,0 +1,26 @@
+creating Dashboards for Environment
+
+using Log Queries of Log Analytics workspace, Eg: kusto Queries
+
+Query and Usage:
+
+To list namespaces:
+   
+KubePodInventory
+| where ClusterName contains "clustername" | summarize count() by Namespace | project Namespace
+
+To list  pods in a Namespace:
+
+KubePodInventory
+| where Namespace contains "default"
+| where ContainerStatus contains "Running"
+| summarize count() by Name | project Name
+
+
+To list ContainerID:
+
+KubePodInventory
+| where Name contains "podName"
+| project ContainerID
+
+

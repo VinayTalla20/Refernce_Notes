@@ -1,3 +1,10 @@
-Reference link for auto Scaling Azure Devops Agent pools
+Reference link for auto Scaling Azure Devops Agent pools using VMSS
 
 https://medium.selbstge.cloud/autoscale-self-hosted-azure-devops-agents-with-scale-sets-cdea63d73e35
+
+
+
+Scale self-hosted Agents in Azure DevOps Pipelines AKS
+
+
+https://medium.com/@matt_89326/auto-scaling-self-hosted-azure-pipelines-agents-on-aks-996471e268bc

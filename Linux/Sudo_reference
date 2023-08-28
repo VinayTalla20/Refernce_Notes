@@ -1,0 +1,7 @@
+Update Sudo configuration file so that a logged in sudo user will not be prompted for password while performing sudo prevailaged actions.
+
+
+cd /etc/sudoers.d
+
+echo  "john ALL=(ALL) NOPASSWD:ALL" >> john-user
+

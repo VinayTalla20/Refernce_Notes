@@ -327,3 +327,90 @@ data:
   tls.key: >-
     LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tDQpNSUlFdndJQkFEQU5CZ2txaGtpRzl3MEJBUUVGQUFTQ0JLa3dnZ1NsQWdFQUFvSUJBUUM4eHJNcGxtTkY0VXdLDQpuanJmUHA1eFp3dmlSTTlWRTBVbkxVdW5NT2pXdGdrNFpGSzcvWld2U1dCYnNNYitMR2lUUDZVcFpyL0JqM05NDQozdXVoazI1SS9rQVhscjlIUWJiWVo4eU9Hb1RleHBSNkRJWmp3QSswcGVtdDNTQ3JRL01PcFJKSU9mTXowZ1N0DQpsOEUzajJqcUd3bmExcTFWTDRNQVpLcDhRM3hLQWovRmljNFB1c2w1K1hWVmdnNjdRWXZ5Q1RrYjNXMUlBdVhEDQpsYklXcGpuY3lTL0VwWmF4cmRZbXNsVTIwcXhOSHRSL0JQekczVDJkZVpMQVNmTmk1dDY3cURPUFU0c052ZGZKDQpVN3BwTkF3QnFtNHZaN3A0d1NpMFR2UlcvMzdhMDFTcWN4TWdXbC9sN2IwdHhnWG4xb24rbWxEWU9xZ1hvYk90DQp1emthUHJPZEFnTUJBQUVDZ2dFQUFNNFhSa3VjNDM2VmVJWStHWnNqd2VZcmF6TEtDNUF5eHhZbEQ3RGtSL2xIDQpUcXFYV0ZiTTV5R1Yydm5pREhTMi93ZVVMbll6SXpWTkFnL0xJSXQ3eGtoV3pxbTd3d2dmYUcrVHkyanJ5TTRZDQpTNVFhQ090cFpid1lmVXNjc2hsdXg5VEF6cy9zVlRJMkR2VHA5azBXeDZtSGZqckk3ZWRRUFUvYlFXdWVyaW1CDQpKTWhMbVVaUTVxRGcxL1lEQjRjK2FSNVFUMUpjSm4xNy8wSkZpN29SY2RucUdXVWlLZ
 type: kubernetes.io/tls
+
+
+Below the Apache Config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kimai-apache-config
+  namespace: kimai2
+data:
+  000-default.conf: |
+    <VirtualHost *:443>
+        ServerAdmin webmaster@localhost
+        DocumentRoot /opt/kimai/public
+        SSLEngine on
+        SSLCertificateFile      /etc/apache2/ssl/tls.crt
+        SSLCertificateKeyFile   /etc/apache2/ssl/tls.key
+        PassEnv MAILER_FROM
+        PassEnv APP_ENV
+        PassEnv APP_SECRET
+        PassEnv DATABASE_URL
+        PassEnv MAILER_URL
+        PassEnv TRUSTED_PROXIES
+        <Directory "/opt/kimai/public">
+            Require all granted
+            DirectoryIndex index.php
+            AllowOverride All
+        </Directory>
+    </VirtualHost>
+    ServerName domain.com
+
+
+Below Configmap for SAML, authentication and 
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kimai2-https-prod-config
+  namespace: kimai2
+data:
+  local.yaml: |-
+
+
+    kimai:
+      saml:
+        provider: microsoft
+        activate: true
+        title: Login with Azure AD
+        mapping:
+          - { saml: $http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name, kimai: username }
+          - { saml: $http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress, kimai: email }
+          - { saml: $http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname $http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname, kimai: alias }
+        roles:
+          resetOnLogin: true
+          attribute: http://schemas.microsoft.com/ws/2008/06/identity/claims/groups
+          mapping:
+              - { saml: xxxxxxxx-yyyy-xxxx-yyyy-xxxxxxxxxxxx, kimai: ROLE_ADMIN }
+              - { saml: Azure-Group-Object-Id, kimai: ROLE_TEAMLEAD }
+        connection:
+          idp:
+              entityId: 'https://sts.windows.net/%env(TENANT_ID)%/'
+              singleSignOnService:
+                  url: 'https://login.microsoftonline.com/%env(TENANT_ID)%/saml2'
+              x509cert: '%env(SAML_IDP_X509CERT)%'
+          sp:
+              entityId: 'https://%env(DOMAIN)%/auth/saml/metadata'
+              assertionConsumerService:
+                  url: 'https://%env(DOMAIN)%/auth/saml/acs'
+              singleLogoutService:
+                  url: 'https://%env(DOMAIN)%/auth/saml/logout'
+          security:
+              requestedAuthnContext: false
+          baseurl: 'https://%env(DOMAIN)%/auth/saml'
+    monolog:
+        handlers:
+            main:
+                path: php://stderr
+
+
+To run pod in 443 port for SSL certs
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ports-config
+  namespace: kimai2
+data:
+  ports.conf: |
+    Listen 443

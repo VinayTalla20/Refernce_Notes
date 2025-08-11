@@ -419,3 +419,8 @@ data:
 Azur Front Door WAF custom POlicies
 
 https://.azurefd.net((/[a-zA-Z0-9-_.]*.(js|css|jpg|png|ico|woff|woff2|gif))|(/service/.*)|(/tyhgf/events.*)|(/sonarqube/.*)($))
+
+
+kubectl get secrets -n syndication smartconxuattls12july2025 -o jsonpath='{.data.tls\.crt}' | openssl x509 -enddate -noout -in
+
+kubectl get secret smartconxuattls12july2025 -n syndication -o jsonpath='{.data.tls\.crt}' | base64 --decode | openssl x509 -enddate -noout

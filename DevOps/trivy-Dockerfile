@@ -1,0 +1,29 @@
+FROM alpine:3.22 AS builder
+RUN apk add curl wget
+RUN  curl -Ls "https://github.com/aquasecurity/trivy/releases/download/v0.64.0/trivy_0.64.0_Linux-ARM64.tar.gz" --output trivy-0.64.0.tar.gz
+RUN  tar -xf trivy-0.64.0.tar.gz -o trivy && \
+    ## move the binary
+    rm -f /usr/bin/trivy && \
+    cp trivy /usr/bin/ && \
+    chmod 755 /usr/bin/trivy && \
+    ## Clean the kitchen
+    rm -f trivy*
+RUN  wget -qq https://aka.ms/downloadazcopy-v10-linux 
+RUN tar -xf downloadazcopy-v10-linux && \
+    ## Move AzCopy
+    rm -f /usr/bin/azcopy && \
+    cp ./azcopy_linux_amd64_*/azcopy /usr/bin/ && \
+    chmod 755 /usr/bin/azcopy && \
+    ## Clean the kitchen
+    rm -f downloadazcopy-v10-linux && \
+    rm -rf ./azcopy_linux_amd64_*/ && \
+    rm  -rf $HOME/.azcopy/*
+
+FROM python:3.10-alpine AS final
+WORKDIR /required_utils
+RUN apk add --no-cache libc6-compat  && rm -rf /var/cache/apk/*
+COPY --from=builder /usr/bin/azcopy /usr/local/bin/azcopy
+COPY --from=builder /usr/bin/trivy /usr/local/bin/trivy
+RUN pip install pandas==2.2.3
+RUN azcopy --version
+RUN trivy --version

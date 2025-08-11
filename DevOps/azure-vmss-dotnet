@@ -1,0 +1,144 @@
+  <ItemGroup>
+    <ProjectReference Include="..\iTalent.Lithium.Data\iTalent.Lithium.Data.csproj" />
+    <ProjectReference Include="..\PowerBI.Data\PowerBI.Data.csproj" />
+  </ItemGroup>
+
+
+
+dotnet cli
+zip
+az cli
+pwsh
+
+
+#! /bin/bash
+
+
+echo "below script is exceuting with user $(whoami)"
+whoami
+apt-get update -y
+apt-get install wget vim zip unzip -y
+cd /home/azureuser
+mkdir dotnet &&  cd  dotnet/
+
+echo "Installing .NET from Binary"
+sudo wget -q https://download.visualstudio.microsoft.com/download/pr/b521d7d2-108b-43d9-861a-58b2505a125a/0023553690a68328b33bc30a38f151db/dotnet-sdk-6.0.420-linux-x64.tar.gz
+tar zxf dotnet-sdk-6.0.420-linux-x64.tar.gz
+
+echo "updated shell profile file so that below variables are available for every session or globally"
+cat <<EOF >> /home/azureuser/.profile
+export DOTNET_ROOT=/home/azureuser/dotnet
+export PATH=$PATH:/home/azureuser/dotnet
+EOF
+
+echo "install azure devops pipeline agent"
+cd /home/azureuser
+mkdir myagent && cd myagent
+wget -q https://vstsagentpackage.azureedge.net/agent/3.236.1/vsts-agent-linux-x64-3.236.1.tar.gz
+tar xzf vsts-agent-linux-x64-3.236.1.tar.gz
+
+echo "setup agent to connect to azure devops"
+export AGENTNAME="$HOSTNAME-$(hostname -I)"
+echo "Adding Agent to pipelines with Name ${AGENTNAME}"
+runuser -l azureuser -c '/home/azureuser/myagent/config.sh --unattended  --url https://dev.azure.com/v-raayin/ --auth pat --token #TOKEN# --pool BapiStgAgents --agent $HOSTNAME-$(hostname -I) --work /home/azureuser/agent_work'
+
+echo "create systemd service and install as non root user"
+sudo ./svc.sh install azureuser
+
+echo "Run agent as systemd serivce"
+sudo ./svc.sh start
+
+
+# remove existing agent from pool
+#sudo ./svc.sh uninstall
+#./config remove   (provide pat token)
+
+
+
+###################################
+# Prerequisites
+ 
+# Update the list of packages
+sudo apt-get update
+ 
+# Install pre-requisite packages.
+sudo apt-get install -y wget
+ 
+# Download the PowerShell package file
+wget https://github.com/PowerShell/PowerShell/releases/download/v7.4.2/powershell_7.4.2-1.deb_amd64.deb
+ 
+###################################
+# Install the PowerShell package
+sudo dpkg -i powershell_7.4.2-1.deb_amd64.deb
+ 
+# Resolve missing dependencies and finish the install (if necessary)
+sudo apt-get install -f
+ 
+# Delete the downloaded package file
+rm powershell_7.4.2-1.deb_amd64.deb
+ 
+# Start PowerShell Preview
+pwsh-lts
+
+
+
+
+
+tlsexpimages.azurecr.io/bapi-gitlab/dotnetcli:6.0.420
+
+
+
+FROM debian:bullseye-slim AS final
+
+# Install dependencies and PowerShell
+RUN apt-get update && \
+    apt-get install -y \
+        wget \
+        apt-transport-https \
+        software-properties-common \
+        gnupg \
+        ca-certificates && \
+    wget -q https://packages.microsoft.com/config/debian/11/packages-microsoft-prod.deb && \
+    dpkg -i packages-microsoft-prod.deb && \
+    apt-get update && \
+    apt-get install -y powershell && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set default shell (optional)
+CMD ["pwsh"]
+
+
+
+tlsexpimages.azurecr.io/bapi-gitlab/dotnetcli:6.0.420
+
+
+checking login user
+azureuser
+Microsoft.AspNetCore.App 8.0.14 [/snap/dotnet-sdk/256/shared/Microsoft.AspNetCore.App]
+Microsoft.NETCore.App 8.0.14 [/snap/dotnet-sdk/256/shared/Microsoft.NETCore.App]
+8.0.407 [/snap/dotnet-sdk/256/sdk]
+
+
+
+checking the installed dotnet version
+Microsoft.AspNetCore.App 6.0.28 [/home/dotnet/shared/Microsoft.AspNetCore.App]
+Microsoft.NETCore.App 6.0.28 [/home/dotnet/shared/Microsoft.NETCore.App]
+6.0.420 [/home/dotnet/sdk]
+
+
+
+reference link: 
+https://dotnet.microsoft.com/en-us/download/dotnet/8.0
+https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-8.0.315-linux-x64-binaries
+
+mkdir -p $HOME/dotnet && tar zxf dotnet-sdk-8.0.315-linux-x64.tar.gz -C $HOME/dotnet
+export DOTNET_ROOT=$HOME/dotnet
+export PATH=$PATH:$HOME/dotnet
+
+
+https://builds.dotnet.microsoft.com/dotnet/Sdk/8.0.315/dotnet-sdk-8.0.315-linux-x64.tar.gz
+
+
+
+PowerBI.FunctionApp.Boards.gitlab-ci.yml

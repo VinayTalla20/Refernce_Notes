@@ -67,3 +67,263 @@ public class ServiceAvailabilityValidationController {
     }
 
 }
+
+
+Azure’s user-friendly portal simplifies the setup process, allowing administrators to easily configure and manage Point-to-Site VPN connections without extensive networking expertise. 
+
+Utilizes individual user authentication through certificates, enhancing security by ensuring that only authorized users can establish a connection. 
+
+
+
+Facilitates hybrid cloud scenarios, enabling users to securely access resources in Azure while maintaining connectivity to on-premises infrastructure.   
+
+
+With Azure’s pay-as-you-go model, organizations can optimize costs by only paying for the resources they consume, making Point-to-Site VPN a cost-effective solution for remote access.
+
+
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+    nginx.ingress.kubernetes.io/client-max-body-size: 50m
+    nginx.ingress.kubernetes.io/cors-allow-credentials: 'false'
+    nginx.ingress.kubernetes.io/cors-allow-headers: >-
+      X-Forwarded-For, X-Forwarded-Proto,
+      X-Forwarded-Port,X-Forwarded-Prefix,app-token, Content-Type
+    nginx.ingress.kubernetes.io/cors-allow-methods: HEAD,PUT, GET, POST, OPTIONS,DELETE
+    nginx.ingress.kubernetes.io/cors-allow-origin: '*'
+    nginx.ingress.kubernetes.io/cors-expose-headers: '*'
+    nginx.ingress.kubernetes.io/enable-cors: 'true'
+    nginx.ingress.kubernetes.io/limit-connections: '10'
+    nginx.ingress.kubernetes.io/limit-rpm: '1000'
+    nginx.ingress.kubernetes.io/limit-rps: '10'
+    nginx.ingress.kubernetes.io/proxy-body-size: 4m
+
+
+
+
+
+
+Kimai2 depoyment
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kimai2-https-prod
+  namespace: kimai2
+  labels:
+    app.kubernetes.io/instance: kimai2-https-prod
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: kimai2
+    app.kubernetes.io/version: apache-2.32.0
+    helm.sh/chart: kimai2-4.3.5
+  annotations:
+    deployment.kubernetes.io/revision: '1'
+    meta.helm.sh/release-name: kimai2-https-prod
+    meta.helm.sh/release-namespace: kimai2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: kimai2-https-prod
+      app.kubernetes.io/name: kimai2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: kimai2-https-prod
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: kimai2
+        app.kubernetes.io/version: apache-2.32.0
+        helm.sh/chart: kimai2-4.3.5
+    spec:
+      volumes:
+        - name: config
+          configMap:
+            name: kimai2-https-prod-config
+            defaultMode: 365
+        - name: kimai-data
+          persistentVolumeClaim:
+            claimName: kimai2-server-pvc
+        - name: apache-config
+          configMap:
+            name: kimai-apache-config
+            defaultMode: 420
+        - name: ports-config
+          configMap:
+            name: ports-config
+            defaultMode: 420
+        - name: ssl-cert
+          secret:
+            secretName: kimai2-prod-tls-secret
+            defaultMode: 420
+      containers:
+        - name: kimai2
+          image: docker.io/kimai/kimai2:apache-2.32.0
+          ports:
+            - name: http
+              containerPort: 443
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: aad-saml-secrets
+          env:
+            - name: APP_ENV
+              value: prod
+            - name: APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: kimai2-https-prod
+                  key: app-secret
+            - name: ADMINMAIL
+              value: admin@example.com
+            - name: ADMINPASS
+              valueFrom:
+                secretKeyRef:
+                  name: kimai2-https-prod
+                  key: admin-password
+            - name: MAILER_FROM
+              value: kimai@example.com
+            - name: MAILER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: kimai2-https-prod
+                  key: mailer-url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: kimai2-https-prod
+                  key: database-url
+            - name: TRUSTED_HOSTS
+              value: localhost,
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          volumeMounts:
+            - name: kimai-data
+              mountPath: /opt/kimai/var/data
+              subPath: data
+            - name: apache-config
+              mountPath: /etc/apache2/sites-available/000-default.conf
+              subPath: 000-default.conf
+            - name: ports-config
+              mountPath: /etc/apache2/ports.conf
+              subPath: ports.conf
+            - name: ssl-cert
+              readOnly: true
+              mountPath: /etc/apache2/ssl
+            - name: config
+              mountPath: /opt/kimai/config/packages/local.yaml
+              subPath: local.yaml
+          livenessProbe:
+            httpGet:
+              path: /en/login
+              port: http
+              scheme: HTTPS
+              httpHeaders:
+                - name: Host
+                  value: localhost
+                - name: X-Forwarded-Proto
+                  value: https
+            initialDelaySeconds: 120
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /en/login
+              port: http
+              scheme: HTTPS
+              httpHeaders:
+                - name: Host
+                  value: localhost
+                - name: X-Forwarded-Proto
+                  value: https
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 6
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - '-c'
+                  - a2query -m ssl || (a2enmod ssl)
+      restartPolicy: Always
+      nodeSelector:
+        kubernetes.io/hostname: aks-smartconxnp3-28539439-vmss000000
+      serviceAccountName: default
+      serviceAccount: default
+      securityContext: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: kimai2-https-prod
+                    app.kubernetes.io/name: kimai2
+                topologyKey: kubernetes.io/hostname
+
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: kimai2-https-prod
+  namespace: kimai2
+  labels:
+    app.kubernetes.io/instance: kimai2-https-prod
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: kimai2
+    app.kubernetes.io/version: apache-2.32.0
+    helm.sh/chart: kimai2-4.3.5
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-resource-group: PROD-RG-EU
+spec:
+  ports:
+    - name: http
+      protocol: TCP
+      port: 443
+      targetPort: http
+  selector:
+    app.kubernetes.io/instance: kimai2-https-prod
+    app.kubernetes.io/name: kimai2
+  type: LoadBalancer
+  loadBalancerIP: 
+
+Below is the CloudFlare Client Certificate for the registered domain.
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aad-saml-secrets
+  namespace: kimai2
+  uid: d7c0193d-0bec-4549-a03d-8e986abb9ee4
+  resourceVersion: '1286207'
+  creationTimestamp: '2025-07-30T05:11:34Z'
+  annotations:
+data:
+  DOMAIN: 
+  SAML_IDP_X509CERT: >-J2QTBUUFJVZjhoU29BNGpYUnBsaDVjZ0orYWdTOHlHOFEKVThLVDNrSEtyZFF3UTN5bTYwRElNZUFGWlZ3THhzN2pJblQvTDhKWkZoT1JLbUlGaWFFa0FEZWNnY0xOcjNWUG04a3djUGxsRnFRZgpVaktrb0RSWW5nVkJrRjdscWVNV21PcWhsSkJUSmdiU1VPNHBuY1VHaTkwMXAwbkJPV2tmTGV4cHRHVzVCclF6RG9vL3VTT1pJMGcyCnlmSlJPVVRTY0JwZ0xMYU1KMC95YlBTVWtRSURBUUFCTUEwR0NTcUdTSWIzRFFFQkN3VUFBNElCQVFDMjlMaTJManowbzE5dmF4S3cKVmFjRUNxaXNCNC8wcTduYVF4eDF3dWwvalk5RU5VcHpZYll2WnlSRHdVTmJMckVtRFo5bElpRHpYV0RwdEtwQndKN1dOY0R3Z1I4cAp0Zk8xdE94NnJpMWpsMklJb3NhOWFpZkhEb29hVUhHbU9aSFJPQngvV3EvUTVkajFSaDRSUU1PVzlmK2haUWR1eXlxaXgrWFZkOWJLClNaNUwxQVNFTUdTUnhaUk5sL21MYnNjRUc3ekhGZVlmdlc4aWtMK1VpZHZIa2dRMDBoT2JuS1A3UVdaZUNnZE5ybDI2UWVoL3NzN0QKMTRGZ052dU9CQ1dOQmxWVzRWZjdjQm4xYldObkU2Z2dHTGVwdE1pMlptazVpajc1V1FtWXlsajJZaFpYNW1mbnMvYmEvUFNldjhtZApzKzEyRlBZSG9KVlp3VDJkZ0FNcg==
+  TENANT_ID: 
+type: Opaque
+
+
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kimai2-prod-tls-secret
+  namespace: kimai2
+  annotations:
+data:
+  tls.crt: >-
+    LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tDQpNSUlFRlRDQ0F2MmdBd0lCQWdJVU8zSEJscWdxOUc1azFZT01RMlBuL2tpanZTd3dEUVlKS29aSWh2Y05BUUVMDQpCUUF3Z2FneEN6QUpCZ05WQkFZVEFsVlRNUk13RVFZRFZRUUlFd3BEWVd4cFptOXlibWxoTVJZd0ZBWURWUVFIDQpFdzFUWVc0Z1JuSmhibU5wYzJOdk1Sa3dGd1lEVlFRS0V4QkRiRzkxWkdac1lYSmxMQ0JKYm1NdU1Sc3dHUVlEDQpWUVFMRXhKM2QzY3VZMnh2ZFdSbWJHRnlaUzVqYjIweE5EQXlCZ05WQkFNVEswMWh
+  tls.key: >-
+    LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tDQpNSUlFdndJQkFEQU5CZ2txaGtpRzl3MEJBUUVGQUFTQ0JLa3dnZ1NsQWdFQUFvSUJBUUM4eHJNcGxtTkY0VXdLDQpuanJmUHA1eFp3dmlSTTlWRTBVbkxVdW5NT2pXdGdrNFpGSzcvWld2U1dCYnNNYitMR2lUUDZVcFpyL0JqM05NDQozdXVoazI1SS9rQVhscjlIUWJiWVo4eU9Hb1RleHBSNkRJWmp3QSswcGVtdDNTQ3JRL01PcFJKSU9mTXowZ1N0DQpsOEUzajJqcUd3bmExcTFWTDRNQVpLcDhRM3hLQWovRmljNFB1c2w1K1hWVmdnNjdRWXZ5Q1RrYjNXMUlBdVhEDQpsYklXcGpuY3lTL0VwWmF4cmRZbXNsVTIwcXhOSHRSL0JQekczVDJkZVpMQVNmTmk1dDY3cURPUFU0c052ZGZKDQpVN3BwTkF3QnFtNHZaN3A0d1NpMFR2UlcvMzdhMDFTcWN4TWdXbC9sN2IwdHhnWG4xb24rbWxEWU9xZ1hvYk90DQp1emthUHJPZEFnTUJBQUVDZ2dFQUFNNFhSa3VjNDM2VmVJWStHWnNqd2VZcmF6TEtDNUF5eHhZbEQ3RGtSL2xIDQpUcXFYV0ZiTTV5R1Yydm5pREhTMi93ZVVMbll6SXpWTkFnL0xJSXQ3eGtoV3pxbTd3d2dmYUcrVHkyanJ5TTRZDQpTNVFhQ090cFpid1lmVXNjc2hsdXg5VEF6cy9zVlRJMkR2VHA5azBXeDZtSGZqckk3ZWRRUFUvYlFXdWVyaW1CDQpKTWhMbVVaUTVxRGcxL1lEQjRjK2FSNVFUMUpjSm4xNy8wSkZpN29SY2RucUdXVWlLZ
+type: kubernetes.io/tls

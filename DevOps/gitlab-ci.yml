@@ -1,0 +1,511 @@
+spec:
+  inputs:
+    environment: 
+      default: dev
+    registry_name:
+      default: smartconxdevacreu.azurecr.io # Default value if not provided
+    service_name:
+      default: deafultservicename
+---
+
+check_user:
+  stage: CHECK-USER
+  tags:
+    - gitlab-italent-dev
+  script: |
+    echo "Running as user: $GITLAB_USER_LOGIN"
+    echo "Branch: $CI_COMMIT_REF_NAME"
+    echo "Environment: $environment"
+
+    if [[ "$GITLAB_USER_LOGIN" == "yeshwanth" || "$GITLAB_USER_LOGIN" == "vinayt" || "$GITLAB_USER_LOGIN" == "root" ]]; then
+      echo "✅ Admin user detected ($GITLAB_USER_LOGIN). Allowed to run on any enviornment."
+    
+    else 
+      if [[ "$GITLAB_USER_LOGIN" == "pavankrishnan" || "$GITLAB_USER_LOGIN" == "vinayt" || "$GITLAB_USER_LOGIN" == "akunam" ]]; then
+        if [[ "$environment" == "dev" || "$environment" == "gcpdev" || "$environment" == "msftstage" || "$environment" == "italentstage" || "$environment" == "italentuat" ]]; then
+          echo "✅ ($GITLAB_USER_LOGIN) is Allowed to deploy in $environment environment."
+          exit 0
+        else
+          echo "🚫 Unauthorized: User '$GITLAB_USER_LOGIN' cannot deploy to $environment environment"
+          exit 1
+        fi
+      elif [[ "$environment" == "dev" || "$environment" == "gcpdev" ]]; then
+        echo "✅ ($GITLAB_USER_LOGIN) is Allowed to deploy in $environment environment."
+        exit 0
+      else
+        echo "🚫 Unauthorized: User '$GITLAB_USER_LOGIN' cannot deploy to $environment environment"
+        exit 1
+      fi
+
+    fi
+
+Clone-config: 
+  image: tlsexpimages.azurecr.io/gitlab-dockerimage:latest-28-01-2025  # This job runs in the test stage.
+  stage: Before-Build    # It only starts when the job in the build stage completes successfully.
+  tags:
+  - gitlab-italent-dev
+  script: |
+      echo 'build and push for ITALENT OR GCP Environment'
+      
+      if [ "$[[inputs.environment]]" = "gcpdev" ]; then
+        ENV="gcpdev"
+        branch="dev"
+      else
+        ENV="dev"
+        branch="dev"
+      fi     
+
+      echo "ENVIRONMENT = $[[inputs.environment]]"
+      echo "navigating to folder $ENV to copy applications.yml"
+      echo "cloning branch $branch"
+      echo "loglevel $LOG_LEVEL"
+
+      echo "Cloning configuration repository for environment gitlab-ci-token , CI_JOB_TOKEN"
+      git clone --branch "$branch" https://gitlab-ci-token:$CI_JOB_TOKEN@gitlab-italent.com/italentdev/XCOP/Configurations.git
+
+      if [ $? -ne 0 ]; then
+        echo "Git clone failed. Exiting with code 1."
+        exit 1
+      fi
+      ls
+      cp -v Configurations/ENVPROPFILES/"$ENV"/application.yml src/main/resources/
+      cp -v Configurations/BuildandDeployment/"$ENV"/PMD_and_testcases.txt src/main/resources/
+      cp -v Configurations/GITLAB-CONFIGS/*  src/main/resources/
+      rm -rf configurations
+      ls * -r
+  artifacts:
+    paths:
+      - src/main/resources/ # Specify the directory to persist
+    expire_in: 1 day
+
+Download-FilesFromShare:
+  image: tlsexpimages.azurecr.io/gitlab-dockerimage:latest-28-01-2025
+  stage: Before-Build
+  tags:
+    - gitlab-italent-dev
+  script: |
+      if [ "$[[inputs.environment]]" = "gcpdev" ]; then 
+        branch=dev
+        cloud="GCP"
+        GSM_LOCATION="us-west1"
+      else
+        managed_identity_resource_id=$DEV_MANAGED_IDENTITY_RESOURCE_ID
+        SHARE_NAME=$dev_sharename
+        ACCOUNT_NAME=$dev_storageacc_name
+        cloud="AZURE"
+      fi
+
+      echo "ENVIRONMENT = $[[inputs.environment]]"
+      echo "az login with $managed_identity_resource_id"
+      echo "SHARE NAME = $SHARE_NAME"
+      echo "ACCOUNT NAME = $ACCOUNT_NAME"
+      echo "***************"
+      echo $branch
+      echo $cloud
+      echo "GSM LOCATION ${GSM_LOCATION}"
+
+      if [ $cloud = "AZURE" ]; then
+              az login --identity --username $managed_identity_resource_id
+              echo 'downloading internal certificate'
+              if [ $? -ne 0 ]; then
+                      echo "AZ Login failed. Exiting with code 1."
+                      exit 1
+              fi
+              az storage file download --auth-mode login --share-name "$SHARE_NAME" --account-name "$ACCOUNT_NAME"  --dest src/main/resources/ --path icsservices.cer --enable-file-backup-request-intent
+
+              az storage file download --auth-mode login --share-name "$SHARE_NAME" --account-name "$ACCOUNT_NAME" --dest src/main/resources/ --path keystore.p12 --enable-file-backup-request-intent
+
+              az storage file download --auth-mode login --share-name "$SHARE_NAME" --account-name "$ACCOUNT_NAME"  --dest src/main/resources/ --path config --enable-file-backup-request-intent
+
+              az storage file download --auth-mode login --share-name "$SHARE_NAME" --account-name "$ACCOUNT_NAME"  --dest src/main/resources/ --path icspmdruleset.xml --enable-file-backup-request-intent
+
+              echo 'listing all downloaded files'
+              cd src/main/resources
+              ls
+              cd ../../../
+      else
+              git clone -b ${branch} https://gitlab-ci-token:$CI_JOB_TOKEN@gitlab-italent.com/italentdev/XCOP/Configurations.git
+
+
+              if [ $? -ne 0 ]; then
+                  echo "Git Clone failed. Exiting with code 1."
+                  exit 1
+              fi
+              cp -v Configurations/BuildandDeployment/$[[inputs.environment]]/smartconx-dev.json src/main/resources/
+
+              gcloud auth activate-service-account secretserviceacc@smartconx-dev-400910.iam.gserviceaccount.com --key-file=src/main/resources/smartconx-dev.json
+              ls
+              
+              if [ $? -ne 0 ]; then
+                  echo "GCP  Login failed. Exiting with code 1."
+                  exit 1
+              fi
+
+              ## set Below endpoint based on location of secrets in GSM ##
+              gcloud config set api_endpoint_overrides/secretmanager https://secretmanager.${GSM_LOCATION}.rep.googleapis.com/
+              
+              gcloud secrets versions access latest --location=${GSM_LOCATION} --secret=Internal-Certificate/ --project=smartconx-dev-400910 --out-file="src/main/resources/icsservices.cer"
+              gcloud secrets versions access latest --location=${GSM_LOCATION} --secret=config/ --project=smartconx-dev-400910 --out-file="src/main/resources/config"
+              gcloud secrets versions access latest --location=${GSM_LOCATION} --secret=hitachi/ --project=smartconx-dev-400910 --out-file="src/main/resources/hitachi.cer"
+              gcloud secrets versions access latest --location=${GSM_LOCATION} --secret=icspmdruleset/ --project=smartconx-dev-400910 --out-file="src/main/resources/icspmdruleset.xml"
+              gcloud secrets versions access latest --location=${GSM_LOCATION} --secret=keystore/ --project=smartconx-dev-400910 --out-file="src/main/resources/keystore.p12"
+              gcloud secrets versions access latest --location=${GSM_LOCATION} --secret=Lamp2/ --project=smartconx-dev-400910 --out-file="src/main/resources/Lamp2.sh"
+              gcloud secrets versions access latest --location=${GSM_LOCATION} --secret=smartconx/ --project=smartconx-dev-400910 --out-file="src/main/resources/smartconx.json"
+              gcloud secrets versions access latest --location=${GSM_LOCATION} --secret=UserList/ --project=smartconx-dev-400910 --out-file="src/main/resources/UsersList.csv"
+              gcloud secrets versions access latest --location=${GSM_LOCATION} --secret=web-proxy-lpl/ --project=smartconx-dev-400910 --out-file="src/main/resources/web-proxy-lpl.p12"
+              cd src/main/resources
+              echo 'IN src/main/resources FOLDER'
+              ls
+              cd ../../../
+
+              echo 'DOWNLOADED CERTs'
+              ls
+      fi
+  artifacts:
+    paths:
+      - src/main/resources/  # Specify the directory to persist
+    expire_in: 1 day
+
+Maven-Build:
+  image: tlsexpimages.azurecr.io/gitlab-dockerimage:latest-28-01-2025
+  stage: Maven-Install
+  tags:
+   - gitlab-italent-dev
+  cache:
+    key: "$CI_PROJECT_NAME-maven"
+    paths:
+      - .m2/repository
+    policy: pull-push
+  script: |
+      set -ex
+      echo "Checking whether PMD and testcases are enabled for the service using PMD_and_testcases.txt file"
+      pwd
+      ls -larth
+      echo "Validating PMD and TestCases for service $service_name in environment ${environment}"
+      
+      if [[ "$[[inputs.environment]]" = "gcpdev" ]]; then
+        FOLDER_PATH=stage
+        branch=stage
+      else
+        FOLDER_PATH=dev
+        branch=dev
+      fi
+
+      echo "Cloning configuration repository with branch $branch using user gitlab-ci-token , JOB_TOKEN"
+      git clone --branch "$branch" https://gitlab-ci-token:$CI_JOB_TOKEN@gitlab-italent.com/italentdev/XCOP/Configurations.git
+      if [ $? -ne 0 ]; then
+        echo "Git clone failed. Exiting with code 1."
+        exit 1
+      fi     
+      ls -l
+      
+      cd Configurations/BuildandDeployment/$FOLDER_PATH
+      CONFIG_FILE="PMD_and_testcases.txt"
+      ######## below two values is applicable for new services by default, if service_name is not mentioned in "PMD_and_testcases.txt" file.
+      SKIP_TESTS="true" 
+      PMD_SKIP="false"
+
+      ####### below conditon check for non-prod envs, and run pmd checks if service_name is mention in "PMD_and_testcases.txt" file.
+      
+      if [[ "$environment" != "italentuat" && "$environment" != "italentprod" && "$environment" != "gcpprod" ]]; then
+
+          while IFS=' ' read -r SERVICE_NAME_FROM_FILE PMD_VALUE TESTCASES_VALUE
+          do
+              if [[ "$SERVICE_NAME_FROM_FILE" == "$service_name" ]]; then
+                  if [[ "$PMD_VALUE" == "True" ]]; then
+                      PMD_SKIP="true"
+                  fi
+                  if [[ "$TESTCASES_VALUE" == "True" ]]; then
+                      SKIP_TESTS="true"
+                  fi
+                  break
+              fi
+          done < "$CONFIG_FILE"
+      
+      else
+      ##### below values for prod envs, to skip pmd and test checks
+          SKIP_TESTS="true"    
+          PMD_SKIP="true"
+      fi
+      
+      ###### checkout to the root dir or previous dir
+      cd -
+      echo "Using Maven options: -DskipTests=$SKIP_TESTS -Dpmd.skip=$PMD_SKIP"
+      
+      cd src/main/resources/
+      source ./commonscript.sh $[[inputs.environment]]
+      cd -
+      sh src/main/resources/update_pom.sh
+      echo "Latest Version after script exicution : $LATEST_VERSION"
+      mvn clean install -s src/main/resources/settings.xml -Dpmd.skip=$PMD_SKIP -DskipTests=$SKIP_TESTS -Dcommonservice.version=$LATEST_VERSION -Dmaven.repo.local=.m2/repositoryversion=$LATEST_VERSION -Dmaven.repo.local=.m2/repository
+  artifacts:
+    paths:
+      - src/main/resources/
+      - target/ # Specify the directory to persist
+    expire_in: 1 day
+
+Sonarqube-Check:
+  stage: Maven-Install
+  needs:
+    [ "Clone-config", "Maven-Build" ]
+  dependencies:
+    - Clone-config
+    - Maven-Build
+  image: tlsexpimages.azurecr.io/sonar-scanner-cli-11:03072025
+  tags:
+   - gitlab-italent-dev
+  script: |
+    set -ex
+    CONFIG_FILE="src/main/resources/PMD_and_testcases.txt"
+    
+    if [[ -f "$CONFIG_FILE" ]]; then
+      
+      echo "Files exists $CONFIG_FILE"
+      
+      # If service_name is not avaiable in the file, may be new service is missed in the file in this cases trivcy scan will be initiated for the service
+      SONARQUBE_ENABLED=$(awk -v svc="$service_name" 'tolower($0) ~ tolower(svc) { print $5 }' "$CONFIG_FILE")
+      SONARQUBE_ENABLED="${SONARQUBE_ENABLED:-True}"
+
+      if [[ "$SONARQUBE_ENABLED" == "True" ]]; then
+        
+        echo "SonarQube Analysis is enabled, so performing Analysis"
+        sonar-scanner -Dsonar.projectKey=${service_name} \
+          -Dsonar.sources=. \
+          -Dsonar.coverage.jacoco.xmlReportPaths=${CI_PROJECT_DIR}/target/jacoco-ut/jacoco.xml \
+          -Dsonar.login="${SONAR_TOKEN}" \
+          -Dsonar.qualitygate.wait=true \
+          -Dproject.settings=${CI_PROJECT_DIR}/src/main/resources/sonar-project.properties        
+      else
+        echo "No need Perform SONARQUBE_ANALYSIS for service $service_name"
+      fi
+    else
+        echo "$CONFIG_FILE File Does not exists"
+        exit 1
+    fi
+    
+  # Triggers This Job only when developer selects Dev Environment while running pipeline
+  rules:
+    - if: $environment == "dev"
+  artifacts:
+    when: always
+    paths:
+      - src/main/resources/
+      - target/ # Specify the directory to persist
+    expire_in: 1 day
+
+Sonarqube-Failure-Mail:
+  stage: Maven-Install
+  image: tlsexpimages.azurecr.io/gitlab-dependency-check:27062025
+  tags:
+    - gitlab-italent-dev
+  script:
+    - env
+    - python3 ${CI_PROJECT_DIR}/src/main/resources/sonarqube-mailer.py
+  needs:
+  - [ "Sonarqube-Check" ]
+  dependencies:
+    - Sonarqube-Check
+  when: on_failure
+  rules:
+    - if: $environment == "dev"
+
+Trivy-Dependency-Check:
+  image: tlsexpimages.azurecr.io/gitlab-trivy-scanner-0.64:03072025
+  stage: Maven-Install
+  # Triggers This Job only when developer selects Dev Environment while running pipeline
+  rules:
+    - if: $environment == "dev"
+  tags:
+   - gitlab-italent-dev
+  variables:
+    TRIVY_DISABLE_VEX_NOTICE : "true"
+    DOCKER_HOST: "tcp://172.17.0.1:2375"
+    DOCKER_CONFIG: "${CI_PROJECT_DIR}/src/main/resources/"
+    TRIVY_CACHE_DIR: "${CI_PROJECT_DIR}/trivy-db-cache"
+    # This is Name of the Docker Image Name used in Docker-Build-Stage
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_SEVERITY: CRITICAL
+  needs:
+    - [ "Maven-Build" ]
+  script: |
+    set -ex
+    
+    mkdir vulnerability-reports
+    
+    azcopy login --identity --identity-resource-id "${DEV_MANAGED_IDENTITY_RESOURCE_ID}"
+    azcopy copy "https://${dev_storageacc_name}.blob.core.windows.net/trivy-db-cache/*" "trivy-db-cache" --recursive
+    
+    # This scans using local cache downloaded from Blob Storage Account
+    # trivy -d fs --skip-db-update --scanners vuln --vuln-type library --no-progress --exit-code 1 --severity ${TRIVY_SEVERITY} --ignore-status will_not_fix --format json --output vulnerability-reports/report.json ${CI_PROJECT_DIR}/pom.xml
+    echo "Check Whether Reports are created in Target Dir vulnerability-reports/"
+    # ls -larth vulnerability-reports/*
+  artifacts:
+    paths:
+      - src/main/resources/
+      - ${CI_PROJECT_DIR}/vulnerability-reports/report.json
+    when: always
+    expire_in: 1 day
+
+Trivy-Dependency-Failure-Mail:
+  stage: Maven-Install
+  image: tlsexpimages.azurecr.io/gitlab-trivy-scanner-0.64:03072025
+  tags:
+    - gitlab-italent-dev
+  script:
+    - python3 ${CI_PROJECT_DIR}/src/main/resources/dependency-check-mailer.py
+  needs:
+  - [ "Trivy-Dependency-Check" ]
+  dependencies:
+    - Trivy-Dependency-Check
+  when: on_failure
+  rules:
+    - if: $environment == "dev"
+
+Image-Build-&-Push:
+  image: tlsexpimages.azurecr.io/gitlab-dockerimage:latest-28-01-2025
+  stage: Image-Build-&-Push
+  tags:
+   - gitlab-italent-dev
+  script: |
+
+    ls
+    echo "deploying image=$service_name to registry $registry_name of environment $[[inputs.environment]] "
+    
+    if [ "$[[inputs.environment]]" = "gcpdev" ]; then
+      registry_name="us-central1-docker.pkg.dev/smartconx-dev-400910/smartconxdevar"
+      cloud="GCP"
+    else
+      registry_name="$[[inputs.registry_name]]"
+      managed_identity_resource_id=$DEV_MANAGED_IDENTITY_RESOURCE_ID
+      cloud="AZURE"
+    fi
+
+    echo $LOG_LEVEL
+    echo -n "sed -i "s/^ENV LOG_LEVEL=.*/ENV LOG_LEVEL=${LOG_LEVEL}/" Dockerfile"
+    sed -i "s/^ENV LOG_LEVEL=.*/ENV LOG_LEVEL=${LOG_LEVEL}/" Dockerfile
+    cat Dockerfile
+
+    export DOCKER_HOST="tcp://172.17.0.1:2375"
+
+    if [ $cloud = "AZURE" ]; then
+      az login --identity --username $managed_identity_resource_id
+      if [ $? -ne 0 ]; then
+          echo "AZ Login failed. Exiting with code 1."
+          exit 1
+      fi
+      az acr login --name $registry_name 
+      sed -i 's|^FROM .*|FROM tlsexpimages.azurecr.io/17-jdk-slim:latest|g' Dockerfile
+      docker build -t $registry_name/$[[inputs.environment]]/$service_name:${CI_COMMIT_SHA}-${CI_PIPELINE_ID} .
+      echo  "build completed"
+    else 
+      cd src/main/resources/
+      gcloud auth activate-service-account --key-file=smartconx-dev.json
+      gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+      cd ../../../
+      pwd
+      sed -i 's|^FROM .*|FROM tlsexpimages.azurecr.io/17-jdk-slim:latest|g' Dockerfile
+      docker build -t $registry_name/$service_name:${CI_COMMIT_SHA}-${CI_PIPELINE_ID} .
+      docker push  $registry_name/$service_name:${CI_COMMIT_SHA}-${CI_PIPELINE_ID}
+      echo  "pushed to google Artifact Registry"
+    fi
+
+    # Will be used in Trivy-SCan Stage and upon successful docker uses below config.json as auth to push to ACR
+    cp ${HOME}/.docker/config.json ${CI_PROJECT_DIR}/src/main/resources/
+  artifacts:
+    paths:
+      - ${CI_PROJECT_DIR}/src/main/resources/
+    when: always
+    expire_in: 1 day
+
+Trivy-Docker-Scan:
+  image: tlsexpimages.azurecr.io/gitlab-trivy-scanner-0.64:03072025
+  stage: Image-Build-&-Push
+  # Excutes only when "Image-Build-&-Push" Passes Successfully
+  when: on_failure
+  rules:
+    - if: $environment == "dev"  
+  when: on_success
+  needs:
+  - [ "Image-Build-&-Push" ]  
+  variables:
+    TRIVY_DISABLE_VEX_NOTICE : "true"
+    DOCKER_HOST: "tcp://172.17.0.1:2375"
+    DOCKER_CONFIG: "${CI_PROJECT_DIR}/src/main/resources/"
+    TRIVY_CACHE_DIR: "${CI_PROJECT_DIR}/trivy-db-cache"
+    # This is Name of the Docker Image Name used in Docker-Build-Stage
+    IMAGE_TO_SCAN: "${dev_registryname}/${environment}/$service_name:${CI_COMMIT_SHA}-${CI_PIPELINE_ID}"
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_SEVERITY: CRITICAL
+  tags:
+   - gitlab-italent-dev
+  script: |
+      set -ex
+
+      echo "USING TRIVY VERSION: $(trivy --version)"
+
+      CONFIG_FILE="src/main/resources/PMD_and_testcases.txt"
+
+      if [ -f "$CONFIG_FILE" ]; then
+        echo "[$CONFIG_FILE] exists — proceeding with Trivy Scan check."
+
+        # Extract fourth column (True/False) for the given service name
+        IS_TRIVY_SCAN_ENABLED=$(awk -v svc="$service_name" 'tolower($0) ~ tolower(svc) { print $4 }' "$CONFIG_FILE")
+        IS_TRIVY_SCAN_ENABLED="${IS_TRIVY_SCAN_ENABLED:-True}"
+
+        if [ "$IS_TRIVY_SCAN_ENABLED" == "True" ]; then
+          echo "Trivy Scan Enabled for service: $service_name"
+
+          azcopy login --identity --identity-resource-id "${DEV_MANAGED_IDENTITY_RESOURCE_ID}"
+          azcopy copy "https://${dev_storageacc_name}.blob.core.windows.net/trivy-db-cache/*" "trivy-db-cache" --recursive --overwrite=true
+
+          trivy -d image \
+            --skip-db-update \
+            --scanners vuln \
+            --vuln-type os \
+            --no-progress \
+            --exit-code 1 \
+            --severity "${TRIVY_SEVERITY}" \
+            --ignore-status will_not_fix \
+            --format json \
+            --output report.json \
+            "$IMAGE_TO_SCAN"
+
+          echo "No CRITICAL vulnerabilities found — pushing Docker image: $IMAGE_TO_SCAN"
+          docker push "$IMAGE_TO_SCAN"
+        else
+          echo "Trivy Scan disabled for service: $service_name — skipping."
+        fi
+      else
+        echo "❌ Config file not found: $CONFIG_FILE"
+        exit 1
+      fi
+  needs:
+    [ "Clone-config", "Image-Build-&-Push" ]
+  dependencies:
+    - Clone-config
+    - Image-Build-&-Push
+  artifacts:
+    paths:
+      - ${CI_PROJECT_DIR}/report.json
+      - src/main/resources/
+    when: always
+    expire_in: 1 day
+  
+send-trivy-scan-failure-email:
+  stage: Image-Build-&-Push
+  image: tlsexpimages.azurecr.io/gitlab-trivy-scanner-0.64:03072025
+  variables:
+    DOCKER_IMAGE: "${dev_registryname}/${environment}/$service_name:${CI_COMMIT_SHA}-${CI_PIPELINE_ID}"
+    DOCKER_IMAGE_TAG: "${CI_COMMIT_SHA}-${CI_PIPELINE_ID}"
+  tags:
+    - gitlab-italent-dev
+  script:
+    - python3 ${CI_PROJECT_DIR}/src/main/resources/trivy-scanner-mailer.py
+  needs:
+  - [ "Trivy-Docker-Scan" ]
+  dependencies:
+    - Trivy-Docker-Scan
+  # Excutes only when "Trivy-Docker-Scan" Fails
+  when: on_failure
+  rules:
+    - if: $environment == "dev"

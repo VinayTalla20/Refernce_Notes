@@ -1,0 +1,33 @@
+     
+    #Converting pem to pfx
+    echo "Converting pem to pfx"
+    openssl pkcs12 -export -in mypem.pem -out certificate.pfx -passout pass:
+     
+    #Extracting private key
+    echo "Extracting private key"
+    openssl pkcs12 -in certificate.pfx -nocerts -out mykey.key -passin pass: -passout pass:1234
+     
+    #Creating rsa key
+    echo "Creating rsa key"
+    openssl rsa -in mykey.key -out mykeyrsa.key -passin pass:1234
+     
+    #Extracting certificate from pfx
+    echo "Extracting certificate from pfx"
+    openssl pkcs12 -in certificate.pfx -clcerts -nokeys -out mycert.crt -passin pass:
+    ls
+      
+     
+    #Creating secret
+    echo "creating secret"
+    kubectl create secret tls smartconxtls22oct2025test -n syndication --cert=mycert.crt --key=mykeyrsa.key
+     
+    echo 'tls created'
+     
+    #Appending new secret to ingress.
+    
+    echo 'Appending new secret to ingress.'
+    
+    kubectl patch ingress ingress-rules -n syndication -p '{"spec": {"tls": [{"secretName": "smartconxtls22oct2025test", "hosts": ["host.dev"]}]}}'
+     
+    echo 'tls patched'
+    echo 'completed TLS AUTOMATION'

@@ -1,0 +1,176 @@
+mongodb://username:password@IP addresss:27017/connector?tls=false
+
+
+# Install `kubelogin` for AKS authentication
+if [[ ! -f /usr/local/bin/kubelogin ]]; then
+    curl -fsSLO https://github.com/Azure/kubelogin/releases/download/v0.0.28/kubelogin-linux-amd64.zip
+    unzip -ojd /usr/local/bin kubelogin-linux-amd64.zip bin/linux_amd64/kubelogin
+    rm -f kubelogin-linux-amd64.zip
+    kubelogin --version
+fi
+
+
+Platform: linux/amd64
+
+
+
+/subscriptions/b-39c9f6bc84cc/resourceGroups/-STG-RG-EU/providers/Microsoft.Compute/disks/mongodb-stg-eu
+
+
+az keyvault secret list --vault-name -stg-eu-kv --query "[].name" -o tsv
+
+az keyvault secret list --vault-name -keys-dev --query "[].name" -o tsv
+
+
+az keyvault secret list --vault-name prod-keyvault --query "[].name" -o tsv \
+  | jq -R -s -c 'split("\n")[:-1]' \
+  | awk '{print "locals {\n  secrets_to_copy = " $0 "\n}"}' \
+  > secrets.auto.tf
+
+Below command get total count of keys in keyvault
+
+az keyvault secret list --vault-name prod-keyvault --query "[].name" -o tsv | wc -l
+
+
+terraform init -backend-config .\backendconfig.conf
+
+
+subscription_id = ""
+tenant_id = ""
+client_id = ""
+client_secret = ""
+
+
+AADSTS50011: The redirect URI 'https://smagkestg.com/ui-service/authenticate' specified in the request does not match the redirect URIs configured for the application '8dc034fa-8a3f-4dc4-a2aa-330ceaae394f'. Make sure the redirect URI sent in the request matches one added to your application in the Azure portal. Navigate to https://aka.ms/redirectUriMismatchError to learn more about how to fix this.
+
+
+db.createUser({
+  user: "hvuppala@.com",
+  pwd: "3Y61kzP!3.uV",
+  roles: [
+    { role: "readWrite", db: "connector" }
+  ]
+})
+
+
+db.updateUser("hvuppala@.com", { roles: [{ role: "readWrite", db: "connector" }] })
+
+
+
+terraform {
+  required_version = ">= 1.4.0"
+
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.12.0"
+    }
+  }
+}
+
+provider "azurerm" {
+  alias = "italent"
+  features {}
+  subscription_id                 = var.subscription_id
+  tenant_id                       = var.aks_service_principal_tenant_id
+  client_id                       = var.aks_service_principal_app_id
+  client_secret                   = var.aks_service_principal_client_secret
+  resource_provider_registrations = "none"
+}
+
+provider "azurerm" {
+  alias = "iappase"
+  features {}
+  subscription_id                 = var.iaapse_subscription_id
+  tenant_id                       = var.aks_iaapse_service_principal_tenant_id
+  client_id                       = var.aks_iaapse_service_principal_app_id
+  client_secret                   = var.aks_iaapse_service_principal_client_secret
+  resource_provider_registrations = "none"
+}
+
+
+
+# update KeyVault Latest Version in MongoDB Collections
+
+
+import os
+from azure.identity import DefaultAzureCredential
+from azure.keyvault.secrets import SecretClient
+from pymongo import MongoClient
+from datetime import datetime
+
+# Load environment or set directly
+SOURCE_KV_URL = os.environ.get("SOURCE_KV_URL", "https://prod-eu-kv.vault.azure.net/")
+MONGO_URI = "mongodb://usernme:Sm%40rtc0nx%402!0!2025@IP address:27017/admin"
+DB_NAME = os.environ.get("DB_NAME", "connector")
+COLLECTION_NAME = os.environ.get("COLLECTION_NAME", "translation_projects")
+# COLLECTION_NAME = os.environ.get("COLLECTION_NAME", "authentication")
+# COLLECTION_NAME = os.environ.get("COLLECTION_NAME", "client_access_details")
+
+# Authenticate Key Vault
+credential = DefaultAzureCredential()
+kv_client = SecretClient(vault_url=SOURCE_KV_URL, credential=credential)
+
+# Connect to MongoDB
+mongo_client = MongoClient(MONGO_URI)
+collection = mongo_client[DB_NAME][COLLECTION_NAME]
+
+# Get unique key_valut_name values from collection
+secret_names = collection.distinct("key_valut_name")
+
+# Iterate and update version IDs
+for secret_name in secret_names:
+    try:
+        versions = list(kv_client.list_properties_of_secret_versions(secret_name))
+
+        # Sort versions by creation date (descending)
+        versions.sort(key=lambda v: v.created_on, reverse=True)
+
+        latest_version = versions[0].version  # Most recent version
+        print(f"Performing DB Changes for COLLECTION_NAME: {COLLECTION_NAME}")
+        print(f"Updating {secret_name} to version {latest_version}")
+
+        # Update all documents with this key_valut_name
+        result = collection.update_many(
+            {"key_valut_name": secret_name},
+            {
+                "$set": {
+                    "key_valut_versionid": latest_version,
+                    "lastUpdatedTime": datetime.utcnow()
+                }
+            }
+        )
+        print(f"Updated {result.modified_count} documents.")
+    except Exception as e:
+        print(f"Error updating {secret_name}: {e}")
+
+
+vhd_blob_url=https://stgeu.blob.core.windows.net/mongodbdisk-stg/mongodbdisk-stg.vhd
+
+echo "using vhd_blob_url: ${vhd_blob_url}"
+
+
+
+# create Disk from Blob VHD
+az disk create --resource-group SMARTCONX-STG-RG-EU --name mongodb-stg-eu --sku Standard_ZRS --location germanywestcentral --size-gb 12 --source https://stgeu.blob.core.windows.net/mongodbdisk-stg/mongodbdisk-stg.vhd
+
+
+
+
+
+
+
+db.createUser({
+  user: "user",
+  pwd: "pawwrosd",
+  roles: [
+    { role: "dbOwner", db: "connector" }
+  ]
+})
+
+docker login -u username -p = icsdev.azurecr.io
+
+docker pull icsdev.azurecr.io/dev/curl:latest
+
+gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+

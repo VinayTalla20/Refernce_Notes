@@ -1,0 +1,8 @@
+gcloud iam service-accounts add-iam-policy-binding secretserviceacc@dev-400910.iam.gserviceaccount.com --role roles/iam.workloadIdentityUser --member "serviceAccount:smartconx-dev-400910.svc.id.goog[syndication/secretmanagersa]" 
+
+
+gcloud container clusters describe smartconx-test-gke --region europe-west2 --format="get(nodeConfig.serviceAccount)"
+
+
+
+gcloud container clusters describe smartconx-dev-gke1-clone-1 --zone us-central1-c --format="get(nodeConfig.serviceAccount)"

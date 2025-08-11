@@ -6,3 +6,69 @@ gcloud container clusters describe smartconx-test-gke --region europe-west2 --fo
 
 
 gcloud container clusters describe smartconx-dev-gke1-clone-1 --zone us-central1-c --format="get(nodeConfig.serviceAccount)"
+
+
+
+Reference for API: Using the APIs Explorer  |  Cloud Logging  |  Google Cloud 
+https://cloud.google.com/logging/docs/api#try-it-buttons
+
+Token Access Scops Required:
+
+Authorization scopes
+
+Requires one of the following OAuth scopes:
+
+https://www.googleapis.com/auth/logging.read
+
+https://www.googleapis.com/auth/logging.admin
+
+https://www.googleapis.com/auth/cloud-platform.read-only
+
+https://www.googleapis.com/auth/cloud-platform
+
+service account add below required permissions:
+
+Response received: {'error': {'code': 403, 'message': "Permission 'logging.views.access' denied on resource (or it may not exist).", 'status': 'PERMISSION_DENIED', 'details': [{'@type': 'type.googleapis.com/google.rpc.ErrorInfo', 'reason': 'IAM_PERMISSION_DENIED', 'domain': 'iam.googleapis.com', 'metadata': {'permission': 'logging.views.access'}}]}}
+
+
+
+Get List of logEntries Using API:
+
+
+
+
+
+
+curl --request POST \
+  --url 'https://logging.googleapis.com/v2/entries:list?=' \
+  --header 'Authorization: Bearer TOKEN' \
+  --header 'Content-type: application/json' \
+  --data '{
+	"resourceNames": [
+		"projects/smartconx-dev-400910/locations/global/buckets/_Default/views/_Default"
+	],
+	"filter": "resource.type=\"http_load_balancer\" AND resource.labels.forwarding_rule_name=\"smartconx-gke-forntend\" AND httpRequest.requestUrl=~\"https://smartconxgke.com/classicconnectorservice\\" AND timestamp >= \"2025-05-06T06:30:00Z\" AND timestamp <= \"2025-05-06T06:45:25.649901887Z\""
+}'
+
+
+
+
+
+
+Vinay Talla
+
+April 28, 2025 at 5:10 AM
+Able to get request count from below query:
+
+
+
+
+
+resource.type="http_load_balancer"
+resource.labels.forwarding_rule_name="smartconx-gke-forntend"
+httpRequest.requestUrl=~"https://smartconxgke.com/classicconnectorservice"
+
+
+
+
+image-20250428-121051.png

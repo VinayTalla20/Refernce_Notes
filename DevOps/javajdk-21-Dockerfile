@@ -1,0 +1,24 @@
+FROM debian:bullseye-slim
+
+# Install dependencies
+RUN apt-get update && apt-get install -y curl git wget tar gzip && rm -rf /var/lib/apt/lists/*
+
+# Install Maven
+RUN wget https://dlcdn.apache.org/maven/maven-3/3.9.10/binaries/apache-maven-3.9.10-bin.tar.gz -O /tmp/maven.tar.gz && \
+    tar -xvzf /tmp/maven.tar.gz -C /opt && \
+    ln -s /opt/apache-maven-3.9.10 /opt/maven && \
+    rm /tmp/maven.tar.gz
+
+ENV MAVEN_HOME=/opt/maven
+ENV PATH="$MAVEN_HOME/bin:$PATH"
+
+# Install Oracle JDK
+ENV JDK_BUILD_URL=https://download.oracle.com/java/21/latest/jdk-21_linux-x64_bin.tar.gz
+RUN wget -O /tmp/jdk.tar.gz "$JDK_BUILD_URL" && \
+    tar -xvzf /tmp/jdk.tar.gz -C /opt && \
+    rm /tmp/jdk.tar.gz
+
+ENV JAVA_HOME=/opt/jdk-21.0.7
+ENV PATH="$JAVA_HOME/bin:$PATH"
+RUN java --version
+RUN mvn --version

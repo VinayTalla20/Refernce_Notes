@@ -1,0 +1,1 @@
+ENV JAVA_OPTS="-Xms1m -Xmx1g -XX:+UseZGC -XX:+UseContainerSupport -XshowSettings:vm"

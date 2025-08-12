@@ -1,0 +1,57 @@
+stages:
+  - Dummy-stage
+  - CHECK-USER
+  - Before-Build 
+  - Maven-Install
+  - Check-Code-Coverage-Percentage
+  - Image-Build-&-Push
+
+variables:
+    environment:
+      value: "dev"
+      options:
+       - "italentuat"
+       - "dev"
+       - "italentstage"
+       - "italentprod"
+       - "msftstage"
+       - "msftprod"
+       - "gcpprod"
+       - "gcpdev"
+      description: "Choose an environment for deployment"
+    LOG_LEVEL: 
+      value: "info"
+      options:
+       - "info"
+       - "debug"
+       - "error"
+      description: "Set log-level"
+    service_name: "CI_PROJECT_NAME"
+
+
+before_script:
+  - echo "Environment input $environment"
+
+include:
+  - component: $CI_SERVER_FQDN/italentdev/XCOP/configurations/Dummy-Stage@$VERSION
+  - component: $CI_SERVER_FQDN/italentdev/XCOP/configurations/BUILD-AND-PUSH-ITALENT-GCP-dev@$VERSION
+    inputs:
+      environment: $environment
+      service_name: "$service_name"
+      registry_name: $dev_registryname
+    rules:
+      - if: $environment == "dev" || $environment == "gcpdev"
+  - component: $CI_SERVER_FQDN/italentdev/XCOP/Configurations/BUILD-AND-PUSH-ITALENT-GCP@$VERSION
+    inputs:
+      environment: $environment
+      service_name: "$service_name"
+      registry_name: $dev_registryname
+    rules:
+      - if: $environment == "italentstage" || $environment == "italentprod" || $environment == "gcpprod" || $environment == "italentuat"
+  - component: $CI_SERVER_FQDN/italentdev/XCOP/Configurations/BUILD-AND-PUSH-MSFT@$VERSION
+    inputs:
+      environment: $environment
+      service_name: "$service_name"
+      registry_name: $dev_registryname
+    rules:
+      - if: $environment == "msftstage" || $environment == "msftprod"
